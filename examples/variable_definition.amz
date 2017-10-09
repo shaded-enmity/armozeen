@@ -1,0 +1,6 @@
+a = '00';
+bits(2) b = '10';
+
+constant bool a_equals_b = a == b;
+
+dumpvar("a", "b", "a_equals_b");

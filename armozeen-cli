@@ -1,0 +1,71 @@
+#!/usr/bin/python
+
+from argparse import ArgumentParser
+from sys import stdin
+
+from armozeen.parser.pipeline import Pipeline
+from armozeen.parser.pipeline.lexemes import Lexemes
+from armozeen.parser.pipeline.lexer import CleanupStage, FindTuplesLateStage
+from armozeen.parser.pipeline.tokenizer import Tokenizer
+from armozeen.interpeter.run import Run
+from armozeen.interpeter import AstBuilder
+from armozeen.parser.grammars import get_grammars_flat
+from armozeen.types import Tokens
+
+
+def argument_parser():
+    ap = ArgumentParser(prog='armozeen')
+    ap.add_argument('-s', '--set', help='Set an Armozeen parameter', action='append')
+    ap.add_argument('-l', '--list', help='List Armozeen parameters')
+    ap.add_argument('-v', '--verbose', action='store_true', help='Print verbose output')
+    ap.add_argument('-o', '--optimize', help='Placeholder')
+    ap.add_argument('--version', action='store_true', help='Print version information and exit')
+    ap.add_argument('source_file', nargs='?')
+    return ap
+
+
+def get_lexemes():
+    return Lexemes
+
+
+def get_tokenizer():
+    return Tokenizer(Tokens.All)
+
+
+def get_input(f):
+    ''' Either read from file passed via stdin or via `f` '''
+
+    if not f or f == '-':
+        return stdin.read()
+    
+    with open(f, 'r') as fl:
+        return fl.read()
+
+
+args = argument_parser().parse_args()
+if args.version:
+    print('0.5')
+    exit(0)
+
+conf_vars = {}
+for cfg in (args.set or []):
+    if '=' in cfg:
+        k, v = cfg.split('=', 2)
+        conf_vars[k] = v
+    else:
+        conf_vars[cfg] = True
+
+
+pipeline = []
+
+pipeline.append(get_tokenizer())
+pipeline.extend(get_lexemes())
+pipeline.extend(get_grammars_flat())
+pipeline.append(FindTuplesLateStage())
+
+pipeline.append(AstBuilder())
+pipeline.append(CleanupStage())
+pipeline.append(Run(**conf_vars))
+
+p = Pipeline(pipeline)
+p.run(get_input(args.source_file))
