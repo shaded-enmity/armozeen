@@ -1,0 +1,6 @@
+(integer, integer) DivMod(integer x, integer y)
+    return (x DIV y, x MOD y)
+
+(div, mod) = DivMod(10, 2);
+
+dumpvar("div", "mod");

@@ -1,0 +1,11 @@
+type Point is (
+    bits(8) X,
+    bits(8) Y
+);
+
+Point pt;
+pt.<X, Y> = '1010101001010101';
+
+bits(16) both = pt.<X, Y>;
+
+dumpvar("pt", "both");

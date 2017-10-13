@@ -1,0 +1,9 @@
+integer Factorial(integer n)
+    integer result = 1;
+    for i=1 to n+1
+        result = result * i;
+    return result;
+
+fac_5 = Factorial(5);
+
+dumpvar("fac_5");

@@ -1,0 +1,10 @@
+type Point is (
+    bits(8) X,
+    bits(8) Y
+);
+
+Point pt;
+pt.X = '10101010';
+pt.Y = '01010101';
+
+dumpvar("pt");

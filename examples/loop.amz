@@ -1,0 +1,4 @@
+constant integer iterations = 5;
+
+for i=0 to iterations
+    printf("%i. hello from Armozeen!", i+1);
