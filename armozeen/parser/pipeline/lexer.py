@@ -1,7 +1,7 @@
 from armozeen.parser.pipeline import PipelineStage
 from armozeen.types import Expression, Expressions, ArmozeenException
 from armozeen.types import Expression, Token, Expressions, Tokens, UnaryOp, TypeDef, Block
-from armozeen.utils import check_expr, check_token, token_or_expr, find_ignore_whitespace, reverse_find_ignore_whitespace, iter_idented, split_by, pairwise, item_is_whitespace
+from armozeen.utils import check_expr, check_token, token_or_expr, find_ignore_whitespace, reverse_find_ignore_whitespace, iter_idented, split_by, item_is_whitespace
 
 
 class UnbalancedTokenPair(ArmozeenException): pass

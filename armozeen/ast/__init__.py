@@ -19,8 +19,11 @@ class astnode(object):
 
 
 astnodemap = {v:k for k, v in astnode.__dict__.iteritems() if not k.startswith('_')}
+
+
 def childref(me, num):
     return me.children[num]
+
 
 class AstNode(Expression): pass
 

@@ -45,11 +45,6 @@ class Keywords(object):
      Array, DownTo, Repeat, Until) = All
 
 
-class BuiltinTypes(object):
-    All = ['bit', 'integer', 'boolean', 'real']
-    (Bit, Integer, Boolean, Real) = All
-
-
 class Expressions(object):
     Indentation = ["indented", "tab_indented"]
     (Indented, TabIndented) = Indentation
@@ -96,7 +91,6 @@ class Expressions(object):
     Case = 'case'
     When = 'when'
     Othwerise = 'otherwise'
-    Root = 'root'
     Return = 'return'
     Otherwise = 'otherwise'
     Parameters = 'parameters'
@@ -106,16 +100,6 @@ class Expressions(object):
 
     IfStatement = 'if_statement'
     OpConcat = 'op_concat'
-
-
-class Keywords(object):
-    All = ['if', 'then', 'else', 'case', 'of', 'when', 'for', 'to', 'constant', 
-           'DIV', 'MOD', 'EOR', 'AND', 'OR', 'otherwise', 'assert', 'IN', 'while',
-           'return', 'type', 'is', 'enumeration', 'elsif', 'array', 'downto',
-           'repeat', 'until']
-    (If, Then, Else, Case, Of, When, For, To, Const, Div, Mod, Xor, And, 
-     Or, Otherwise, Assert, In, While, Return, Type, Is, Enum, Elsif,
-     Array, DownTo, Repeat, Until) = All
 
 
 class BuiltinTypes(object):

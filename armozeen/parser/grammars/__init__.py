@@ -1,6 +1,6 @@
 from armozeen.parser.pipeline.grammar import Grammar, GExpr, GToken, GConsume, GConsumeT
-from armozeen.types import Tokens, Token, Expression, Expressions, Type, TypedVariable
-from armozeen.utils import check_expr, check_token, token_or_expr, wildcard as W
+from armozeen.types import Tokens, Expression, Expressions, Type, TypedVariable
+from armozeen.utils import check_expr, token_or_expr, wildcard as W
 from collections import defaultdict
 
 
@@ -149,7 +149,7 @@ class EnumGrammar(Grammar):
 class BinaryOpGrammar(Grammar):
     def __init__(self, op_type, items):
         self.op_type = op_type
-	self.items = items
+        self.items = items
 
     def create_item(self, tokens, items, consumed):
         a = items[-3]

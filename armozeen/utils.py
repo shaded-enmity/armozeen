@@ -124,7 +124,7 @@ def split_by(items, sep, sanitize=False):
         :param items: List of tokens and expresisons
         :type  items: list[Expression, Token]
         :param sep:   Separator token
-        :type  sep:   Token
+        :type  sep:   str
     '''
     toks, cand = [], []
     for t in items:
