@@ -1,0 +1,23 @@
+bits(4) some_bits = '0100';
+integer decision = 0;
+
+
+if some_bits<2> == '1' then
+   decision = 1;
+printf("Decision if: %i", decision);
+
+
+case some_bits of
+  when '0000'
+    decision = 2;
+  when '0100'
+    decision = 4;
+printf("Decision case: %i", decision);
+
+
+case some_bits of
+  when '1111'
+    decision = 6;
+  otherwise
+    decision = 10;
+printf("Decision otherwise: %i", decision);

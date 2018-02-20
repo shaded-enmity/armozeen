@@ -1,0 +1,24 @@
+enumeration ShapeType {
+  ST_Square,
+  ST_Circle
+};
+
+type Point2D is (
+  real X,
+  real Y
+);
+
+type Shape is (
+  real side,
+  ShapeType st,
+  Point2D location
+);
+
+Shape square;
+square.side = 1.5;
+square.st = ST_Square;
+square.location.X = 5.0;
+square.location.Y = 10.0;
+
+printf("Square location: <%f, %f>", square.location.X, square.location.Y);
+dumpvar("square", "square.location", "square.st");

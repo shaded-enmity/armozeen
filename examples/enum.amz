@@ -1,0 +1,12 @@
+enumeration Beans {
+  B_True,
+  B_False,
+  B_FileNotFound
+};
+
+Beans someBean = B_FileNotFound;
+
+if someBean == B_FileNotFound then
+    printf("File not found!");
+
+dumpvar("Beans", "someBean");

@@ -1,6 +1,5 @@
 from armozeen.parser.pipeline import PipelineStage
-from armozeen.types import Expression, Expressions, ArmozeenException
-from armozeen.types import Expression, Token, Expressions, Tokens, UnaryOp, TypeDef, Block
+from armozeen.types import Expression, Token, Expressions, Tokens, UnaryOp, TypeDef, Block, Type, ArmozeenException
 from armozeen.utils import check_expr, check_token, token_or_expr, find_ignore_whitespace, reverse_find_ignore_whitespace, iter_idented, split_by, item_is_whitespace
 
 
@@ -209,7 +208,7 @@ class AngledExpressions(PipelineStage):
           bits(6) variable = '000110';
           variable<4:5> == '11'
 
-        Sub-structure selections and #assignments:
+        Sub-structure selections and assignments:
 
           struct MyStruct {
              bit A,
@@ -248,8 +247,8 @@ class AngledExpressions(PipelineStage):
                     return False
             elif isinstance(item, Expression):
                 if item.type == Expressions.Paren:
-                    if not AngledExpressions.check_recursive(item.children):
-                        return False
+                    return AngledExpressions.check_recursive(item.children)
+
                 if item.type not in [Expressions.Name, Expressions.Number, Expressions.Division,
                                      Expressions.Modulo, Expressions.String]:
                     return False
@@ -372,9 +371,9 @@ class HandleBitsType(PipelineStage):
     @staticmethod
     def check_bits_tokens(tokens):
         def checker(item):
-            valid_tokens = [Tokens.Star, Tokens.Plus, Tokens.Minus]
+            valid_tokens = [Tokens.Star, Tokens.Plus, Tokens.Minus, Tokens.Space]
             valid_expressions = [Expressions.Name, Expressions.Number, Expressions.Division,
-                                 Expressions.Modulo, Expressions.XOR]
+                                 Expressions.Modulo, Expressions.XOR, Expressions.Paren]
             return token_or_expr(item, valid_tokens, valid_expressions)
 
         return all(checker(t) for t in tokens)
@@ -386,17 +385,18 @@ class HandleBitsType(PipelineStage):
                 skip_next = False
                 continue
 
-            if check_expr(t, Expressions.Name) and check_token(t.children[0], Expressions.Bits):
+            if check_expr(t, Expressions.Name) and check_token(t.children[0], 'bits'):
                 if len(items) < i:
                     raise Exception('Not enouugh tokens for bits')
                 if not check_expr(items[i + 1], 'paren'):
                     raise Exception('Expected bits size, found' + str(t))
                 parens = items[i + 1]
                 if not HandleBitsType.check_bits_tokens(parens.children):
-                    raise Exception('Invalid token in bits length')
-                toks.append(Expression(None, Expressions.Bits))
-                toks[-1].children = list(parens.children)
+                    raise Exception('Invalid token in bits length:\n'+str(parens.children))
+                toks.append(Type('bits', parens.children))
                 skip_next = True
+            elif check_expr(t, Expressions.Name) and check_token(t.children[0], 'bit'):
+                toks.append(Type('bits', 1))
             else:
                 if isinstance(t, Expression):
                     t.children[:] = self.run(t.children)
@@ -514,7 +514,7 @@ class FindFunctionDefinitions(PipelineStage):
                 fndef &= check_expr(items[i+1], Expressions.Paren)
                 short = False
                 k, prev = reverse_find_ignore_whitespace(items[:i])
-                return_values = [Expressions.TypeName, Expressions.Name, Expressions.Paren, Expressions.Bits]
+                return_values = [Expressions.TypeName, Expressions.Tuple, Expressions.Name, Expressions.Paren, Expressions.Bits, Expressions.TypeExp]
 
                 if check_token(prev, [Tokens.NewLine, Tokens.Nil]):
                     short = True
@@ -659,6 +659,7 @@ class IndentationCollapser(PipelineStage):
 
 
 class ParenNewlineRemover(PipelineStage):
+    ''' Clean up new line characters from parentheses  '''
     def run(self, items):
         toks = []
         for t in items:
@@ -671,6 +672,7 @@ class ParenNewlineRemover(PipelineStage):
 
 
 class CleanupStage(PipelineStage):
+    ''' Remove superfluous indentation and some other junk '''
     def run(self, items):
         toks = []
         for t in items:

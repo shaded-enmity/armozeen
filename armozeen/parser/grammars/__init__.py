@@ -261,18 +261,23 @@ class BracketFuncGrammar(Grammar):
 class FoldConstGrammar(Grammar):
     @property
     def items(self):
-        return [GExpr('constant'), GExpr([Expressions.Bits, 'name', 'typename', 'bit', 'integer', 'real', 'typed_variable'])]
+        return [GExpr('constant'), GExpr([Expressions.Bits, 'name', 'typeexp', 'typename', 'bit', 'integer', 'real', 'typed_variable'])]
 
     def create_item(self, tokens, items, consumed):
         size = 0
         if check_expr(items[1], ['typename', 'name']):
-            name = items[1]
+            name = items[1].children[0].char
         else:
             name = items[1]
+
         if check_expr(items[1], Expressions.Bits):
             size = items[1].children[0].children[0]
-        tokens.append(Type(name, size=size, const=True))
-        tokens[-1].children = [items[0], items[1]]
+
+        if check_expr(items[1], Expressions.TypeExp):
+            items[1].const = True
+            tokens.append(items[1])
+        else:
+            tokens.append(Type(name, size=size, const=True))
 
 
 @register_grammar('stage2', 12)
@@ -301,8 +306,9 @@ class TypedRefVariableGrammar(Grammar):
 class ForLoopGrammar(Grammar):
     @property
     def items(self):
-        return [GExpr('for'), GExpr(Expressions.Name), GExpr(Expressions.Assignment), 
-                GExpr([Expressions.Name, Expressions.Number, Expressions.Paren, 'op_num_*']), 
+        return [GExpr('for'), GExpr(Expressions.Name), GExpr(Expressions.Assignment),
+                GExpr([Expressions.Name, Expressions.Number,
+                       Expressions.Paren, 'op_num_*']),
                 GExpr(['to', 'downto']), GConsume(0), NlTerm, GExpr(Expressions.Block)]
 
     def create_item(self, tokens, items, consumed):
@@ -311,7 +317,7 @@ class ForLoopGrammar(Grammar):
         dest = consumed[0]
         tokens.append(Expression(None, 'forloop'))
         block.children[:] = self.run(block.children)
-        tokens[-1].children = [init, dest, block]
+        tokens[-1].children = [init, dest[0], block]
 
 
 @register_grammar('stage2', 13)
@@ -333,7 +339,8 @@ class FundefGrammar(Grammar):
 
     def create_item(self, tokens, items, consumed):
         tokens.append(Expression(None, 'function_definition'))
-        tokens[-1].children = [[items[0].children[0]]] + [[items[0].children[1]]] + [[items[0].children[2]]] + [items[-1]]
+        tokens[-1].children = [[items[0].children[0]]] + \
+            [[items[0].children[1]]] + [[items[0].children[2]]] + [items[-1]]
 
 
 @register_grammar('stage3', 3)
@@ -384,15 +391,35 @@ class SubstructGrammar(Grammar):
 class ArrayGrammar(Grammar):
     @property
     def items(self):
-        return [GExpr('array'), GExpr(['typename', 'typeexp', 'name', 'bits', 'bit', 'integer', 'real']), GExpr('bracketfunc')]
+        return [GExpr('array'), GExpr(['typename', 'typed_variable', 'typeexp', 'name', 'bits', 'bit', 'integer', 'real']), GExpr(['bracketfunc', 'bracket'])]
 
     def create_item(self, tokens, items, consumed):
         tokens.append(Expression(None, 'arraydef'))
+        # handle the bracket: [] case here
+        # print(items[1], items[2])
         tokens[-1].children = [items[1], items[2]]
 
 
+class AsGrammar(Grammar):
+    @property
+    def items(self):
+        return [GExpr(['name', 'load', 'typename']), GExpr('as'), GExpr(['name', 'load', 'typename'])]
+
+    def create_item(self, tokens, items, consumed):
+        pass
+
+
+class ImportSimple(Grammar):
+    @property
+    def items(self):
+        return [GExpr('import'), GConsume(0), NlTerm]
+
+    def create_item(self, tokens, items, consumed):
+        pass
+
 class GenericGrammarProxy(object):
     ''' Proxy object to wrap already instantiated grammars '''
+
     def __init__(self, grammar):
         self.grammar = grammar
 
@@ -400,7 +427,8 @@ class GenericGrammarProxy(object):
         return self.grammar
 
 
-ConcatExpres = [Expressions.Name, Expressions.String, Expressions.Bitselect, Expressions.OpConcat, Expressions.Funcall]
+ConcatExpres = [Expressions.Name, Expressions.String,
+                Expressions.Bitselect, Expressions.OpConcat, Expressions.Funcall]
 _ConcatGrammar = BinaryOpGrammar(Expressions.OpConcat, [
     GExpr(ConcatExpres), GToken(Tokens.Colon), GExpr(ConcatExpres)
 ])
@@ -408,31 +436,32 @@ ConcatGrammar = GenericGrammarProxy(_ConcatGrammar)
 _registered_grammars['stage3'].append((0, ConcatGrammar()))
 
 _AssignGrammar = BinaryOpGrammar('assign', [
-    GExpr(['name', 'real', 'bitselect', 'tuple', 'paren', 'bracketfunc', 'typed_variable', 'destructure', 'substruct', 'load']), GExpr('assignment'), GExpr()
+    GExpr(['name', 'real', 'bitselect', 'tuple', 'paren', 'bracketfunc',
+           'typed_variable', 'destructure', 'substruct', 'load']), GExpr('assignment'), GExpr()
 ])
 AssignGrammar = GenericGrammarProxy(_AssignGrammar)
 _registered_grammars['stage3'].append((1, AssignGrammar()))
 
 
-NumExp = GExpr([Expressions.Name, Expressions.Number, Expressions.Funcall, Expressions.Paren, 
+NumExp = GExpr([Expressions.Name, Expressions.Number, Expressions.Funcall, Expressions.Paren,
                 Expressions.Bracket, Expressions.BoolNot, Expressions.Negation, 'op_*', 'real',
                 Expressions.String, Expressions.Curly, Expressions.Load, 'bracketfunc', Expressions.Bitselect]
-)
-_NumericGrammars = [BinaryOpGrammar(name, [NumExp, op, NumExp])  
-                   for op, name in [(GToken(Tokens.Star),  'op_num_mult'),
-                                    (GExpr('DIV'),         'op_num_div'),
-                                    (GExpr('MOD'),         'op_num_mod'),
-                                    (GExpr('bsr'),         'op_num_bsr'),
-                                    (GExpr('bsl'),         'op_num_bsl'),
-                                    (GToken(Tokens.Caret), 'op_num_pow'),
-                                    (GToken(Tokens.Plus),  'op_num_add'),
-                                    (GToken(Tokens.Minus), 'op_num_sub')]
-]
+               )
+_NumericGrammars = [BinaryOpGrammar(name, [NumExp, op, NumExp])
+                    for op, name in [(GToken(Tokens.Star),  'op_num_mult'),
+                                     (GExpr('DIV'),         'op_num_div'),
+                                     (GExpr('MOD'),         'op_num_mod'),
+                                     (GExpr('bsr'),         'op_num_bsr'),
+                                     (GExpr('bsl'),         'op_num_bsl'),
+                                     (GToken(Tokens.Caret), 'op_num_pow'),
+                                     (GToken(Tokens.Plus),  'op_num_add'),
+                                     (GToken(Tokens.Minus), 'op_num_sub')]
+                    ]
 NumericGrammars = GenericGrammarProxy(_NumericGrammars)
 _registered_grammars['numeric'] = list(enumerate(NumericGrammars()))
 
 
-_LogicalGrammars = [BinaryOpGrammar(name, [NumExp, op, NumExp])  
+_LogicalGrammars = [BinaryOpGrammar(name, [NumExp, op, NumExp])
                     for op, name in [(GToken(Tokens.LessThan), 'op_less_than'),
                                      (GToken(Tokens.GreaterThan), 'op_greater_than'),
                                      (GExpr('gteq'), 'op_gteq'),
@@ -442,7 +471,7 @@ _LogicalGrammars = [BinaryOpGrammar(name, [NumExp, op, NumExp])
                                      (GExpr('land'), 'op_logical_and'),
                                      (GExpr('lor'), 'op_logical_or'),
                                      (GExpr('IN'), 'op_in')]
-]
+                    ]
 LogicalGrammars = GenericGrammarProxy(_LogicalGrammars)
 _registered_grammars['logical'] = list(enumerate(LogicalGrammars()))
 
@@ -463,4 +492,5 @@ _registered_grammars['stage2'].append((15, LoadGrammar()))
 
 # Sort each grammar stage according to each grammars sort key
 for kk in _registered_grammars.keys():
-    _registered_grammars[kk] = sorted(_registered_grammars[kk], key=lambda (x, _): x)
+    _registered_grammars[kk] = sorted(
+        _registered_grammars[kk], key=lambda (x, _): x)

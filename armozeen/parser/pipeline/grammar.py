@@ -7,26 +7,23 @@ from functools import partial
 
 
 class GrammarAtom(object):
-    def __init__(self, opt):
-        self.optional = opt
-
     def match(self, element):
         return False
 
 
 class GrammarExpression(GrammarAtom):
-    def __init__(self, optional, expr_type=None):
+    def __init__(self, expr_type=None):
         self.exprression_type = expr_type
-        super(GrammarExpression, self).__init__(optional)
+        super(GrammarExpression, self).__init__()
 
     def match(self, element):
         return not self.exprression_type or check_expr(element, self.exprression_type)
 
 
 class GrammarToken(GrammarAtom):
-    def __init__(self, optional, token_type):
+    def __init__(self, token_type):
         self.token_type = token_type
-        super(GrammarToken, self).__init__(optional)
+        super(GrammarToken, self).__init__()
 
     def match(self, element):
         return check_token(element, self.token_type)
@@ -35,6 +32,7 @@ class GrammarToken(GrammarAtom):
 class GrammarConsume(GrammarAtom):
     def __init__(self, group):
         self.group = group
+        super(GrammarConsume, self).__init__()
 
     def match(self, element):
         return True
@@ -51,15 +49,18 @@ class GrammarConsumeTyped(GrammarConsume):
 
 class Grammar(PipelineStage):
     def items(self):
-        return None
+        return []
 
     def create_item(self, tokens, items, consumed):
         tokens += items
 
+    def _match(self, atom, node):
+        return self.items[atom].match(node)
+
     def run(self, etstream):
         atom, consumed = 0, defaultdict(list)
         start, sl, toks, shadow = -1, len(etstream), [], []
-        leftover = None
+        leftover, S = None, len(self.items)
         for i, n in enumerate(etstream):
             shadow.append(n)
             matched, opt = False, False
@@ -67,20 +68,17 @@ class Grammar(PipelineStage):
             # since if we consume the expression or token it shouldn't be processed any
             # further
             if isinstance(self.items[atom], GrammarConsume):
-                ei = len(self.items) > atom + 1
-                if self.items[atom].match(n):
+                ei = S > atom + 1
+                if self._match(atom, n):
                     # If we have enough grammar atoms and the next atom matches the current
                     # value we need to stop consuming
-                    if ei and self.items[atom + 1].match(n):
-                        if i == sl - 1 or len(self.items) - 1 == atom + 1:
-                            #print('HAPPENS?')
+                    if ei and self._match(atom + 1, n):
+                        if i == sl - 1 or S - 1 == atom + 1:
                             self.create_item(toks, etstream[start:i], consumed)
-                            atom = 0
-                            start = -1
-                        else:    
+                            atom, start = 0, -1
+                        else:
                             atom += 2
                     elif (sl - 1) == i:
-                        #print('OR THIS ONE?')
                         consumed[self.items[atom].group].append(n)
                         self.create_item(toks, etstream[start:i], consumed)
                         start = -1
@@ -95,23 +93,25 @@ class Grammar(PipelineStage):
                         break
                     if not ei:
                         self.create_item(toks, etstream[start:i], consumed)
-                        start = -1
-                        atom = 0
+                        atom, start = 0, -1
                     else:
                         atom += 1
 
-            if self.items[atom].match(n):
+            if self._match(atom, n):
                 if atom == 0:
                     start = i
                     atom += 1
-                elif atom == len(self.items) - 1:
+                elif atom == S - 1:
                     inp = ([leftover] if leftover else []) + etstream[start:i + 1]
+
                     self.create_item(toks, inp, consumed)
-                    start = -1
-                    atom = 0
-                    consumed = defaultdict(list)
-                    if self.items[atom].match(toks[-1]):
-                        if (sl - i) < (len(self.items) - atom):
+
+                    consumed, created, start, atom = defaultdict(list), toks[-1], -1, 0
+
+                    if self._match(0, created):
+                        # first recurse into the created node
+                        created.children = self.run(created.children)
+                        if (sl - i) < (S - atom):
                             break
                         check = partial(check_expr, t=Expressions.Paren)
                         # Out current grammar matches the expression created above by the call
@@ -127,15 +127,15 @@ class Grammar(PipelineStage):
                         # well, hence we check if some of the children contain scope worth
                         # inspecting (currently `paren`) and replace the original entry
                         # with the processed one
-                        sub_expressions = list(filter(check, toks[-1].children))
+                        sub_expressions = list(
+                            filter(check, created.children))
                         if sub_expressions:
                             for torep, repl in zip(sub_expressions, self.run(sub_expressions)):
-                                replace(toks[-1].children, torep, repl)
-                        atom = 1
-                        start = i + 1
-                        tmp = toks[-1]
+                                replace(created.children, torep, repl)
+
                         toks.pop()
-                        leftover = tmp
+
+                        atom, start, leftover = 1, i + 1, created
                 else:
                     atom += 1
             else:
@@ -143,8 +143,7 @@ class Grammar(PipelineStage):
                 if start > -1:
                     toprocess += shadow[start:i]
                     toks += shadow[start:i]
-                    start = -1
-                    atom = 0
+                    atom, start = 0, -1
 
                 consumed = defaultdict(list)
                 for tp in toprocess:
@@ -161,7 +160,7 @@ class Grammar(PipelineStage):
                 toks.append(n)
 
         if start > -1:
-            if isinstance(self.items[atom], GrammarConsume) and atom == (len(self.items)-1):
+            if isinstance(self.items[atom], GrammarConsume) and atom == (S - 1):
                 # The last element of the grammar is GrammarConsume atom and we have no nodes left
                 # and since GrammarConsume atoms are optional we just create the node now
                 self.create_item(toks, etstream[start:], consumed)
@@ -175,8 +174,7 @@ class Grammar(PipelineStage):
 
 
 # Helpful aliases for grammar definitions
-GExpr = partial(GrammarExpression, False)
-GToken = partial(GrammarToken, False)
+GExpr = GrammarExpression
+GToken = GrammarToken
 GConsume = GrammarConsume
 GConsumeT = GrammarConsumeTyped
-

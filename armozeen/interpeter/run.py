@@ -5,8 +5,8 @@ from armozeen.types import Expression, Expressions, Token, ArmozeenException
 from re import compile as regexp
 
 
-# Regexp to recognize printf() style specifiers %s %i and %b
-fmtre = regexp('%[sib]')
+# Regexp to recognize printf() style specifiers %s, %i, %b and %f
+fmtre = regexp('%[sibf]')
 
 
 def enum(enums):
@@ -47,8 +47,8 @@ def match_types_strict(a, b, relax_const=False):
         return False
     if a.name != b.name:
         return False
-    if a.name == ValueTypes.Bits and a.size != b.size:
-        return False
+    if a.name == ValueTypes.Bits:
+        return a.size == b.size
 
     return True
 
@@ -71,10 +71,15 @@ def value_cmp(a, b):
     '''
     aX, bX = Coercion.coerce(a, b)
 
+    if aX.type_info.name != bX.type_info.name:
+        _raise(RET.ARG_WRONG_TYPE,
+               'Invalid types for comparison: {} and {}'.format(_format_typeinfo(aX.type_info), 
+                                                                _format_typeinfo(bX.type_info)))
+
     if aX.type_info.name == ValueTypes.Bits:
         A, B = aX.value, bX.value
         if aX.type_info.size != bX.type_info.size:
-            _raise(RET.DIFF_BIT_SIZE, 
+            _raise(RET.DIFF_BIT_SIZE,
                   'Invalid bits comparison {} and {}'.format(_format_typeinfo(aX.type_info), 
                                                              _format_typeinfo(bX.type_info)))
 
@@ -180,6 +185,10 @@ def get_bool_conf(context, name):
     return context.config.get(name, False)
 
 
+def get_int_conf(context, name):
+    return context.config.get(name, 0)
+
+
 def builtin__backtrace(args, context):
     ''' Print backtrace
 
@@ -203,7 +212,7 @@ def builtin__print(args, context):
     ''' Printf builtin function
 
     '''
-    vtmap = {'bits': 's', 'integer': 'i', 'bool': 'b'}
+    vtmap = {'bits': 's', 'integer': 'i', 'bool': 'b', 'real': 'f'}
 
     fmt, fmtargs = args[0].char, args[1:]
 
@@ -241,12 +250,34 @@ def _dumpvar(args, context, sort=False):
     except ImportError:
         PrettyTable = None
 
+    def fmt_size_param(size):
+        if isinstance(size, int):
+            return str(size)
+        T = {
+            astnode.Name: lambda x: x.name,
+            astnode.Number: lambda x: x.value,
+            astnode.Real: lambda x: x.value,
+            astnode.Mul: lambda x: '{} * {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Add: lambda x: '{} + {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Sub: lambda x: '{} - {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Div: lambda x: '{} DIV {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Mod: lambda x: '{} MOD {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Power: lambda x: '{}^{}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.BitshiftLeft: lambda x: '{} BSL {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.BitshiftRight: lambda x: '{} BSR {}'.format(T[x.left.type](x.left), T[x.right.type](x.right)),
+            astnode.Expression: lambda x: '({})'.format(T[x.expr.type](t.expr))
+        }
+        return T[size[0].type](size[0])
+
     def fmt_def_param(p):
-        if check_expr(nest(p, 0), Expressions.Bits):
-            tn  = 'bits(' + nest(p, 0, 0, 0).char + ')'
-            return tn
+        type_specifier = p.item_type
+        if check_ast(type_specifier, astnode.Name):
+            return type_specifier.name.char
         else:
-            return nest(p, 0, 0).char
+            type_name = type_specifier.name
+            if type_name == 'bits':
+                return 'bits({!s})'.format(fmt_size_param(type_specifier.size))
+            return type_name
 
     direct = True
     if not args:
@@ -254,20 +285,34 @@ def _dumpvar(args, context, sort=False):
         args = list(context.locals.keys())
 
     if PrettyTable:
-        def _dumptype(items):
-             return "{\n" + "\n".join(items) + "\n}"
+        def _dumptype(items, level=0):
+             return "{\n" + (" "*level) + ("\n"+" "*level).join(items) + '\n' + (" "*(level/2)) +  "}"
+
+        def _dumpfields(v):
+            items = []
+            for field in v:
+                name = field[0]
+                value = field[1]
+                items.append(_format_typeinfo(value.type_info) + ' ' + name + " = " + str(value.value))
+            return _dumptype(items, 4)
 
         pt = PrettyTable(["Variable", "Value", "Type"])
         for local in args:
-            v = context.locals[local]
+            if '.' in local.char:
+                im = local.char.split('.')
+                ctx = context.locals
+                for xx in im[:-1]:
+                    ctx = ctx[xx]
+                v = ctx.value[im[-1]]
+            else:
+                v = context.locals[local]
 
             if check_ast(v, astnode.FunctionDefinition):
                 if not v.is_bracket:
-                    nm = nest(v, 1, 0).char
+                    nm = v.name.name.char
                     fparams = []
                     for x in v.children[2]:
-                        for p in x:
-                            fparams.append(fmt_def_param(nest(p, 0)))
+                        fparams.append(fmt_def_param(x))
                     pt.add_row([nm, '{}({})'.format(nm, ', '.join(fparams)), 'constant function'])
                 else:
                     nm = nest(v, 1, 0).char
@@ -296,17 +341,23 @@ def _dumpvar(args, context, sort=False):
                 if ti.name == ValueTypes.Type and v != '<unset>':
                     if isinstance(v, StructType):
                         v = v.fields
+                        # fix
                         v = _dumptype([
-                            '  {} {} = {}'.format(_format_typeinfo(rr.type_info), nm, rr.value or '<usnet>')
+                            #'  {} {} = {}'.format(_format_typeinfo(rr.type_info), nm, rr.value if rr.value is not None else '<unset>')
+                            '  {} {} = {}'.format(_format_typeinfo(rr.type_info), nm, _dumpfields(rr.value.fields) if isinstance(rr.value, StructType) else rr.value)
                             for nm, rr in v
                         ])
                     else:
                         v = _dumptype(
-                                ['  {} {}'.format(
-                                    _format_typeinfo(context._eval(sv)), 
-                                    nest(sv, 1, 0).char) 
-                                 for sv in v]
+                            ['  {} {}'.format(
+                                _format_typeinfo(context._eval(sv)), 
+                                nest(sv, 1, 0).char) 
+                             for sv in v]
                         )
+                if ti.name == ValueTypes.Enum and ti.const:
+                    v = '\n'.join(v)
+                elif ti.name == ValueTypes.Enum:
+                    v = context.locals[ti.subtype].value[v]
                 pt.add_row([local, v, _format_typeinfo(ti)])
             elif isinstance(v, Scope):
                 pt.add_row([local, '', 'scope<{}>'.format(v.name)])
@@ -448,7 +499,7 @@ class TypeInfo(object):
         self.subtype = sub
 
     def clone(self):
-        return TypeInfo('' + self.name, self.size, self.ref, self.const)
+        return TypeInfo('' + self.name, self.size, self.ref, self.const, self.subtype)
 
     def __repr__(self):
         return '<TypeInfo name={}, size={}, ref={}, const={}>'.format(
@@ -485,9 +536,12 @@ class StructType(Resolvable):
         self._fd = dict(fields)
 
     def __getitem__(self, item):
-        if check_expr(item, Expressions.Name):
+        if check_ast(item, astnode.Name):
             item = item.children[0].char
         return self._fd[item]
+
+    def __contains__(self, item):
+        return item in self._fd
 
     def keys(self):
         return self._fd.keys()
@@ -501,7 +555,7 @@ class Value(EvalResult):
     def __init__(self, vt, v):
         self.value_type = vt
         self.value = v
-    
+
     @property
     def type_info(self):
         return self.value_type
@@ -546,7 +600,7 @@ class Scope(Resolvable):
         return '<Scope name={}, items=<{}>>'.format(self.name, pformat(self.items))
 
     def __contains__(self, item):
-        if check_expr(item, Expressions.Name):
+        if check_ast(item, astnode.Name):
             item = item.children[0].char
         if isinstance(item, Token):
             item = item.char
@@ -556,14 +610,14 @@ class Scope(Resolvable):
         return self.items.keys()
 
     def __setitem__(self, item, value):
-        if check_expr(item, Expressions.Name):
+        if check_ast(item, astnode.Name):
             item = item.children[0].char
         if isinstance(item, Token):
             item = item.char
         self.items[item] = value
 
     def __getitem__(self, item):
-        if check_expr(item, Expressions.Name):
+        if check_ast(item, astnode.Name):
             item = item.children[0].char
         if isinstance(item, Token):
             item = item.char
@@ -796,6 +850,15 @@ class Run(PipelineStage):
        'UInt': Value(TypeInfo(ValueTypes.Builtin, const=True), builtin__UInt)
     }
 
+    TypeRegistry = {
+        'bool': TypeInfo(ValueTypes.Bool),
+        'int': TypeInfo(ValueTypes.Integer),
+        'integer': TypeInfo(ValueTypes.Integer),
+        'uint': TypeInfo(ValueTypes.Integer),
+        'real': TypeInfo(ValueTypes.Real),
+        'bits': TypeInfo(ValueTypes.Bits)
+    }
+
     def _backtrace(self):
         print('Backtrace of {} frame(s)'.format(len(self.state.frames)))
         def get_pos(n):
@@ -827,6 +890,7 @@ class Run(PipelineStage):
         self.state = ProgramState()
         self.state.push_frame()
         self.state.frame.backtrace_name = 'program'
+        self.type_registry = {}
 
         for bname, bimpl in self.Builtins.items():
             self.locals[bname] = bimpl
@@ -866,6 +930,9 @@ class Run(PipelineStage):
         scopes = names_to_strings([yy.left] + list(reversed(scopes)))
         last_scope = self.locals
         for scope in scopes:
+            if isinstance(last_scope, Value) and last_scope.type_info.name == ValueTypes.Type:
+                last_scope = last_scope.value
+
             if scope in last_scope:
                 last_scope = last_scope[scope]
             elif create_intermediary:
@@ -873,8 +940,8 @@ class Run(PipelineStage):
             else:
                 _raise(RET.NOT_FOUND, "Name not found: {}".format(str(scope)))
         if isinstance(last_scope, Value) and last_scope.type_info.name == ValueTypes.Type:
-            # Descend into structure scope
             last_scope = last_scope.value
+
         return last_scope
 
     def _eval(self, node):
@@ -888,20 +955,31 @@ class Run(PipelineStage):
 
         self.state.frame.curnode = node
 
+        import sys
+        if hasattr(node, 'type'):
+            if not node.type.startswith('ast_'):
+                sys.stderr.write('Node type: {}\n'.format(node.type))
+                sys.stderr.write(' => ' + str(node) + '\n')
+        elif not isinstance(node, (str, int)):
+            sys.stderr.write('Node type: {}\n'.format(type(node)))
+
         if check_ast(node, astnode.EnumerationDefinition):
             ''' Define enumeration and put all items into current scope
 
             '''
             fields = node.fields
             typename = node.name.children[0].char
-            value = Value(TypeInfo(ValueTypes.Enum, const=True, sub=typename), typename)
-            self.locals[typename] = value
 
+            names = []
             for i, f in enumerate(fields):
                 self.locals[nest(f, 0).char] = Value(
                         TypeInfo(ValueTypes.Enum, const=True, sub=typename), 
                         i
                 )
+                names.append(nest(f, 0).char)
+
+            value = Value(TypeInfo(ValueTypes.Enum, const=True, sub=typename), names)
+            self.locals[typename] = value
 
             return NullResult
 
@@ -915,15 +993,16 @@ class Run(PipelineStage):
             self.locals[type_name] = var
             return var
 
-        elif check_expr(node, Expressions.Name) or isinstance(node, str):
+        elif check_ast(node, astnode.Name):
             ''' Evaluate `name` expressions and raw strings as variable names
 
             '''
+
             try:
                 return self.locals[node]
             except KeyError:
                 name = node
-                if check_expr(name, Expressions.Name):
+                if check_ast(name, astnode.Name):
                     name = name.children[0].char
                 _raise(RET.NOT_FOUND, 'Item {} not found in current scope'.format(node))
 
@@ -945,7 +1024,7 @@ class Run(PipelineStage):
 
             '''
             l, r = self._eval(node.left), self._eval(node.right)
-            lv, rv = l.value, r.value
+            #lv, rv = l.value, r.value
 
             result = None
             if check_ast(node, astnode.Equal):
@@ -984,12 +1063,16 @@ class Run(PipelineStage):
             '''
             return Bitstring(node.children[0])
 
-        elif isinstance(node, int):
-            ''' ints to Armozeen integers
-
-            '''
-            return Value(TypeInfo(ValueTypes.Integer), node)
-
+        #elif isinstance(node, int):
+        #    ''' ints to Armozeen integers
+        #
+        #    '''
+        #    import traceback
+        #    print('='*80)
+        #    traceback.print_stack()
+        #    print('='*80)
+        #
+        #    return Value(TypeInfo(ValueTypes.Integer), node)
         elif check_ast(node, astnode.Number):
             ''' Numbers to Armozeen Integers
 
@@ -1015,7 +1098,7 @@ class Run(PipelineStage):
 
             # Special case - builtin function
             if isinstance(func, Value) and func.type_info.name == ValueTypes.Builtin:
-                return func.value([self._eval(np) for np in node.parameters.children], self)
+                return func.value([self._eval(np) for np in node.parameters], self)
 
             # Special case - array access
             if isinstance(func, Array):
@@ -1041,8 +1124,8 @@ class Run(PipelineStage):
             mvp, in_values, value_inputs, rt_meta = None, {}, {}, []
             if not func.is_bracket:
 
-                dp = node.parameters.children
-                p = func.children[2][0].children
+                dp = node.parameters
+                p = func.parameters
 
                 if p != dp:
                     length_match = len(p) == len(dp)
@@ -1071,38 +1154,35 @@ class Run(PipelineStage):
                         r = []
                         for node in nodes:
                             if check_ast(node, astnode.Tuple):
-                                # recurse into tuple 
                                 r += [_find_metaparams_ex(node.children)]
-                            if check_expr(node, Expressions.Bits):
-                                if check_expr(node.children[0], Expressions.Name):
-                                    r.append(node.children[0].children[0].char)
-                                else:
-                                    # What else could be valid here?
-                                    if 'binary_node' in node.children[0].type:
-                                       r.append(node.children[0])
-                                    else:
-                                       r.append(node.children[0])
+                            if check_ast(node, astnode.Type):
+                                if isinstance(node.size, list):
+                                    r.append(node.size[0])
                         return r
 
                     def check_param_type(p, t):
-                        if check_expr(p, Expressions.Name):
-                            return t.type_info.name == ValueTypes.Struct
-                        if p.type == t.type_info.name:
-                            return True
-                        if check_expr(p, Expressions.TypeName):
-                            return p.children[0].char == t.type_info.name
+                        if check_ast(p, astnode.Name):
+                            name = t.type_info.name
+                            if name == ValueTypes.Struct:
+                                return t.type_info.subtype == p.name.char
+                            else:
+                                return p.name.char == t.type_info.name
+                        elif check_ast(p, astnode.Type):
+                            pp = self._clean_eval(p)
+                            return pp.name == t.type_info.name
+
                         return False
 
                     for i in range(len(p)):
-                        typ = p[i].children[0].children[0]
+                        typ = p[i].children[0]
                         if not check_param_type(typ, dp[i]):
-                            _raise(RET.ARG_WRONG_TYPE, 'Input argument does not match: {} != {}'.format(
+                            _raise(RET.ARG_WRONG_TYPE, 'Input argument type does not match: {} != {}'.format(
                                 str(typ), str(dp[i])    
                             ))
 
-                        if check_expr(typ, Expressions.Bits):
-                            if check_expr(typ.children[0], Expressions.Name):
-                                value_inputs.append((i, typ.children[0].children[0].char))
+                        if check_ast(typ, astnode.Type):
+                            if isinstance(typ.size, list) and check_ast(typ.size[0], astnode.Name):
+                                value_inputs.append((i, typ.size[0].name.char))
 
                     in_values = dict([(iv[0], dp[iv[0]].type_info.size) for iv in value_inputs])
                     rt_meta = _find_metaparams_ex(func.children[0])
@@ -1118,12 +1198,11 @@ class Run(PipelineStage):
                 # Push parameters as local variables in the functions frame
                 for inp in zip(dp, p):
                     inv = inp[0].clone()
-                    self.locals[nest(inp[1], 0, 1, 0).char] = inv
+                    self.locals[inp[1].name.name.char] = inv
 
                 # Same for meta parameters
                 for n, pos in value_inputs.items():
-                    inv = self._eval(in_values[pos]).clone()
-                    inv.type_info.const = True
+                    inv = Value(TypeInfo(ValueTypes.Integer, const=True), in_values[pos])
                     self.locals[n] = inv
                 
                 self._eval(func.impl)
@@ -1159,6 +1238,7 @@ class Run(PipelineStage):
             l, r = Coercion.coerce(l, r)
 
             if l.type_info.name not in [ValueTypes.Integer, ValueTypes.Real]:
+                print(l, r)
                 _raise(RET.ARG_WRONG_TYPE, 
                        'Type {} is not integer / real'.format(_format_typeinfo(l.type_info)))
 
@@ -1212,15 +1292,15 @@ class Run(PipelineStage):
                 We need to handle number of distinct cases depending on what node
                 is in LHS:
             
-                * expr<Name>
+                * ast<Name>
                   This can be either assignment or definition with type inferred from
                   RHS. If this is an assignment we need to check that types match and that
                   we're not assigning to a `const` variable.
 
-                * expr<typed_variable>
+                * ast<TypedName>
                   Declare a variable of specific type and assign a value to it. 
 
-                * expr<Substruct>
+                * ast<Substruct>
                   Substruct into variables in current scope e.g.: <A, B> = '10';
                   
                 * ast<Load>
@@ -1235,29 +1315,28 @@ class Run(PipelineStage):
                 * ast<Bitselect>
                   Assign to a range(s) of bits, sizes must match
             '''
-            lhs_n, var = node.children[0], None
-            if check_expr(lhs_n, Expressions.Name):
-                lhs_s, ll = nest(node, 0, 0).char, None
+
+            lhs_n, var = node.left, None
+
+            if check_ast(lhs_n, astnode.Name):
+                lhs_s, ll = lhs_n.name.char, None
                 if lhs_s in self.locals:
                     ll = self.locals[lhs_s]
                     if ll.type_info.const:
-                        _raise(RET.CONSTANT, 'Value {} is constant!'.format(lhs_s))
-                var = self._eval(node.children[1])
+                        _raise(RET.CONSTANT, 'Value {} is onstant!'.format(lhs_s))
+                var = self._eval(node.right)
                 if var != NullResult:
                     if ll and not match_types_strict(ll.type_info, var.type_info):
-                        msg = 'Invalid assigment of value of type {} to variable of type {}'
-                        _raise(RET.ARG_WRONG_TYPE, msg.format(ll.type_info, var.type_info))
+                        msg = 'Invalid assigment of value of type {} to variable of type {} ({})'
+                        _raise(RET.ARG_WRONG_TYPE, msg.format(ll.type_info, var.type_info, var))
                     self.locals[lhs_s] = var
                 else:
-                    _raise(RET.RUNTIME_ERROR, 'Invalid name assignment {!s}'.format(node.children[1]))
-
+                    _raise(RET.RUNTIME_ERROR, 'Invalid name assignment {!s}'.format(node.right))
             elif check_ast(lhs_n, astnode.Load):
                 scope = self._resolve_load(lhs_n, create_intermediary=True)
-                #r = self._eval(node.children[1])
-                var = self._eval(node.children[1])
+                var = self._eval(node.right)
                 if var != NullResult:
-                    #var = Value(r.type_info, r)
-                    k = nest(lhs_n, 1, 0).char
+                    k = lhs_n.right.name.char
                     if isinstance(scope, StructType):
                         if match_types_strict(scope[k].type_info, var.type_info):
                             scope[k].value = var.value
@@ -1277,7 +1356,7 @@ class Run(PipelineStage):
                     _raise(RET.RUNTIME_ERROR, 'Invalid load assignment {!s}'.format(node.children[1]))
 
             elif check_ast(lhs_n, astnode.Tuple):
-                var = self._eval(node.children[1])
+                var = self._eval(node.right)
                 def _rec(a, b):
                     a_tuple, b_tuple = check_ast(a, astnode.Tuple), b.type_info.name == ValueTypes.Tuple
                     if a_tuple != b_tuple:
@@ -1304,7 +1383,7 @@ class Run(PipelineStage):
                     else:
                         self.locals[varname] = varval
 
-            elif check_expr(lhs_n, 'typed_variable'):
+            elif check_ast(lhs_n, astnode.TypedName):
                 lhs_s = lhs_n.children[1].children[0].char
                 var = self._eval(node.children[1])
                 if lhs_s in self.locals:
@@ -1336,9 +1415,9 @@ class Run(PipelineStage):
                     elt.value = "".join(vv[:sz])
                     vv = vv[sz:]
 
-            elif check_expr(lhs_n, 'substruct'):
+            elif check_ast(lhs_n, astnode.Substructure):
                 var = self._eval(node.right)
-                elts = [self.locals[elt.children[0].char] for elt in lhs_n.children]
+                elts = [self.locals[elt.children[0].char] for elt in lhs_n.names]
                 szl = sum(elt.type_info.size for elt in elts)
                 szr = var.type_info.size
                 if szl != szr:
@@ -1352,9 +1431,10 @@ class Run(PipelineStage):
             elif check_ast(lhs_n, astnode.Bitselect):
                 value = self._clean_eval(node.right)
                 v = self._clean_eval(nest(node, 0, 0))
-                lsize = len(v.value)
+
+                lsize = len(v.value) if v.value else v.type_info.size
                 rsize = len(value.value)
-                vv = list(v.value)
+                vv = list(v.value) if v.value else ['0']*v.type_info.size
 
                 off = 0
                 for u, l in bitselect(lhs_n, self):
@@ -1366,7 +1446,7 @@ class Run(PipelineStage):
                     if diff != 0:
                         vv[lsize - (u+1):lsize - l] = value.value[off:off+diff+1]
                     else:
-                        vv[lsize-u] = value.value[off]
+                        vv[lsize-(u+1)] = value.value[off]
 
                     off += l if l == u else diff
 
@@ -1379,7 +1459,7 @@ class Run(PipelineStage):
                 v.value = "".join(vv)
                 
             else:
-                _raise(RET.RUNTIME_ERROR, 'Invalid assignment {!s}'.format(node.children[1]))
+                _raise(RET.RUNTIME_ERROR, 'Invalid assignment {!s}'.format(node))
 
             return var or NullResult
 
@@ -1409,9 +1489,9 @@ class Run(PipelineStage):
 
             '''
 
-            name = node.children[0][0].left.children[0].char
-            iterable = self._clean_eval(node.children[0])
-            target = self._clean_eval(node.children[1])
+            name = node.init.left.children[0].char
+            iterable = self._clean_eval(node.init)
+            target = self._clean_eval(node.finish)
 
             self.locals[name] = iterable
 
@@ -1420,56 +1500,70 @@ class Run(PipelineStage):
                     break
                 iterable.value += 1
 
-        elif check_expr(node, 'typed_variable'):
+        elif check_ast(node, astnode.TypedName):
             ''' Typed variable declaration
 
             '''
             t, v = None, None
-            if node.children[1] in self.locals:
+            if node.name in self.locals:
                 _raise(RET.ALREADY_DECLARED, 
                        'Variable {} already declared'.format(node.children[1]))
-            ts = node.children[0]
-            if check_expr(ts, 'bits'):
-                real_size = self._eval(ts.children[0])
-                t = TypeInfo(ValueTypes.Bits, real_size.value)
-            elif check_expr(ts, 'typename'):
-                t = TypeInfo(ts.children[0].char)
-            elif check_expr(ts, 'typeexp'):
-                const = ts.const
-                name = ts.name
-                if check_expr(name, 'typename'):
-                    t = TypeInfo(ts.name.children[0].char, const=const)
-                elif check_expr(name, 'name'):
-                    if name.children[0].char == 'bool':
-                        t = TypeInfo(ValueTypes.Bool, const=const)
-                else:
-                    _raise(RET.RUNTIME_ERROR, 'Invalid typed variable name' + str(name))
+            ts = node.item_type
 
-            elif check_expr(ts, 'name'):
-                nn = ts.children[0].char
-                if nn == 'bool':
-                    t = TypeInfo(ValueTypes.Bool)
+            def _type_info_new(name):
+                rtype, rvalue = None, None
+                if name in self.TypeRegistry:
+                    rtype = self.TypeRegistry[name].clone()
                 else:
-                    subitem = self.locals[nn]
-                    t = TypeInfo(
-                            ValueTypes.Type, 
-                            sub=subitem.type_info.subtype
-                    )
-                    names = [nest(si, 1, 0).char for si in subitem.value]
-                    v = StructType(ts.children[0].char, [
-                        (n, Value(self._clean_eval(x), None)) for x, n in zip(subitem.value, names)
-                    ])
+                    subitem = self.locals[name]
+
+                    if subitem.type_info.name == 'enum':
+                        rtype = subitem.type_info.clone()
+                        rtype.const = False
+                    else:
+                        rtype = TypeInfo(
+                                ValueTypes.Type, 
+                                sub=subitem.type_info.subtype
+                        )
+                        names = [nest(si, 1, 0).char for si in subitem.value]
+
+                        def _create_struct(fname, fields, values):
+                            data = []
+                            for x, n in zip(values, fields):
+                                vt, val = self._clean_eval(x), None
+                                if vt.name == ValueTypes.Type:
+                                    ss = self.locals[vt.subtype]
+                                    nn = [nest(sx, 1, 0).char for sx in ss.value]
+                                    val = _create_struct(vt.subtype, nn, ss.value)
+                                data.append((n, Value(vt, val)))
+                            return StructType(fname, data)
+
+                        rvalue = _create_struct(name, names, subitem.value)
+
+                return rtype, rvalue
+
+            if check_ast(ts, astnode.Name):
+                nn = ts.name.char
+                t, v = _type_info_new(nn)
+            elif check_ast(ts, astnode.Type):
+                nn = ts.name
+                if nn == 'bits':
+                    real_size = ts.compute_size(self)
+                    t = TypeInfo(ValueTypes.Bits, real_size.value)
+                else:
+                    t, v = _type_info_new(nn)
+            else:
+                _raise(RET.RUNTIME_ERROR, 'Invalid type specifier: ' + str(ts))
 
             self.locals[node.children[1]] = Value(t, v)
             return t
 
-        elif check_expr(node, Expressions.Paren):
+        elif check_ast(node, astnode.Expression):
             if len(node.children) > 1:
                 _raise(RET.RUNTIME_ERROR, 'Invalid parenthesis expression')
             return self._eval(node.children[0])
 
-
-        elif check_expr(node, 'sstring'):
+        elif check_ast(node, astnode.TextString):
             ''' This is a double-quoted string
 
             '''
@@ -1479,10 +1573,7 @@ class Run(PipelineStage):
             ''' Evaluate a case ... of statement
 
             '''
-            if isinstance(node.case, str):
-                val, rv = Bitstring(node.case), None
-            else:
-                val, rv = self._clean_eval(node.case), None
+            val, rv = self._clean_eval(node.case), None
             for branch in node.branches:
                 brval = self._clean_eval(branch.children[0])
                 if value_cmp(val, brval):
@@ -1493,15 +1584,20 @@ class Run(PipelineStage):
                     rv = self._eval(node.otherwise.children[0])
             return rv
 
-        elif check_expr(node, 'real'):
-            floatval = node.children[0].children[0].char + '.' + node.children[2].children[0].char
-            return Value(TypeInfo(ValueTypes.Real), float(floatval))
+        elif check_ast(node, astnode.Real):
+            return Value(TypeInfo(ValueTypes.Real), node.value)
 
-        elif check_expr(node, Expressions.Block):
+        elif check_ast(node, astnode.Block):
             ''' Evaluate each children
 
             '''
-            return self._eval(node.children)
+            last, prev = None, None
+            for nc in node:
+                last = self._eval(nc)
+                if self.state.frame.returned is not None:
+                    return prev
+                prev = last
+            return NullResult
 
         elif check_ast(node, astnode.If):
             ''' Evaluate if/elsif/else branches and execute block associated with
@@ -1509,11 +1605,11 @@ class Run(PipelineStage):
             '''
             first_stage = [node.if_branch] + node.elsif_branches
             for branch in first_stage:
-                r = self._eval(branch[0][0])
+                r = self._eval(branch.condition)
                 if r.value:
-                    return self._eval(branch[1])
+                    return self._eval(branch.block)
             if node.else_branch:
-                return self._eval(node.else_branch[1])
+                return self._eval(node.else_branch.block)
 
         elif check_ast(node, astnode.ArrayDefinition):
 
@@ -1531,38 +1627,40 @@ class Run(PipelineStage):
             # TODO: This code should go into a separate function and
             #       handle generic instantion of Armozeen types
             type_, items = None, []
-            if check_expr(node.item_type, 'bits'):
-                s = node.item_type.children[0]
+            if check_ast(node.item_type, astnode.Type):
+                s = node.item_type.size[0]
+
+                #print(node.item_type)
+
                 if check_ast(s, astnode.Number):
                     type_ = TypeInfo(ValueTypes.Bits, int(s.children[0].char))
                     items = [Bitstring('0'*type_.size) for _ in range(array_size)]
                 else:
                     _raise(RET.CONSTANT, 'Array element size must be contant')
             else:
-                _raise(RET.ARG_WRONG_TYPE, 'Invalid array type argument')
+                _raise(RET.ARG_WRONG_TYPE, 'Invalid array type argument: ' + node.item_type.type)
 
             var = Array(items, type_)
             self.locals[name] = var
 
             return var
 
-        elif isinstance(node, list):
-            ''' Evaluate each element of the list unless we've got a return value
+        elif check_ast(node, astnode.Type):
+            if node.name in self.TypeRegistry:
+                typ = self.TypeRegistry[node.name].clone()
+            else:
+                typ = self.locals[node.name].type_info
 
-            '''
-            last, prev = None, None
-            for nc in node:
-                last = self._eval(nc)
-                if self.state.frame.returned is not None:
-                    return prev
-                prev = last
-            return last
+            return typ
 
         else:
             ''' Node unaccounted for
 
             '''
-            _raise(RET.RUNTIME_ERROR, 'Unknown AST node')
+            if get_int_conf(self, 'verbose') > 0:
+                import traceback
+                traceback.print_stack()
+            _raise(RET.RUNTIME_ERROR, 'Unknown AST node: ' + str(node))
 
         return NullResult
 
@@ -1578,7 +1676,7 @@ class Run(PipelineStage):
             self._backtrace()
         except Exception as exc:
             print('Fatal runtime error while processing:\n')
-            print(self.state.frame.curnode)
+            #print(self.state.frame.curnode.type, self.state.frame.curnode.children)
             print('')
             import traceback
             traceback.print_exc()

@@ -1,0 +1,11 @@
+bits(N) Ones(integer N)
+    bits(N) acc;
+    for I=0 to N
+        acc<I> = '1';
+    return acc;
+
+
+bits(8) b = Ones(8);
+
+
+dumpvar("b", "Ones");

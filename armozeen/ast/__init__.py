@@ -6,7 +6,7 @@ class astnode(object):
      Destructure, Branch, If, CaseOf, ForLoop, Load, Concat, Add, Sub, Mul, Div, Mod, Xor,
      BitshiftLeft, BitshiftRight, ArrayAccess, Compare, Number, And, Or, GreaterThan, LessThan,
      GraterThanOrEqual, LessThanOrEqual, Equal, NotEqual, In, Return, Tuple, TypeDefinition,
-     ArrayDefinition, Power) = (
+     ArrayDefinition, Power, TypedName, Block, Name, TextString, Type, Expression, Real, Substructure) = (
             'ast_assignment', 'ast_function_call', 'ast_function_definition',
             'ast_enumeration_definition', 'ast_string', 'ast_set', 'ast_bitselect',
             'ast_destructure', 'ast_branch', 'ast_if', 'ast_caseof', 'ast_forloop',
@@ -14,15 +14,12 @@ class astnode(object):
             'ast_num_div', 'ast_num_mod', 'ast_num_xor', 'ast_num_bsl', 'ast_num_bsr', 'ast_array_access',
             'ast_compare', 'ast_number', 'ast_and', 'ast_or', 'ast_greater_than', 'ast_less_than',
             'ast_greater_than_or_equal', 'ast_less_than_or_equal', 'ast_equal', 'ast_not_equal', 'ast_in',
-            'ast_return', 'ast_tuple', 'ast_type_definition', 'ast_array_definition', 'ast_power'
+            'ast_return', 'ast_tuple', 'ast_type_definition', 'ast_array_definition', 'ast_power', 'ast_typed_name',
+            'ast_block', 'ast_name', 'ast_text_string', 'ast_type', 'ast_expression', 'ast_real', 'ast_substructure'
     )
 
 
 astnodemap = {v:k for k, v in astnode.__dict__.iteritems() if not k.startswith('_')}
-
-
-def childref(me, num):
-    return me.children[num]
 
 
 class AstNode(Expression): pass
@@ -106,7 +103,15 @@ class AstUnaryOperator(AstUnaryNode):
 
 class AstNumber(AstNode):
     def __init__(self, parent, value):
-        super(AstNumber, self).__init__(parent, 'ast_number')
+        super(AstNumber, self).__init__(parent, astnode.Number)
+        self.children = [value]
+
+    value = property(lambda self: self.children[0])
+
+
+class AstReal(AstNode):
+    def __init__(self, parent, value):
+        super(AstReal, self).__init__(parent, astnode.Real)
         self.children = [value]
 
     value = property(lambda self: self.children[0])
@@ -150,6 +155,14 @@ class AstDestructure(AstNode):
 
     source = property(lambda self: self.children[0])
     selection = property(lambda self: self.children[1])
+
+
+class AstSubstructure(AstNode):
+    def __init__(self, parent, names):
+        super(AstSubstructure, self).__init__(parent, astnode.Substructure)
+        self.children = [names]
+
+    names = property(lambda self: self.children[0])
 
 
 class AstBranch(AstNode):
@@ -200,3 +213,56 @@ class AstArrayDef(AstNode):
     name = property(lambda self: self.children[1])
     size_spec = property(lambda self: self.children[2])
 
+
+class AstTypedName(AstNode):
+    def __init__(self, parent, type_, name):
+        super(AstTypedName, self).__init__(parent, astnode.TypedName)
+        self.children = [type_, name]
+
+    item_type = property(lambda self: self.children[0])
+    name = property(lambda self: self.children[1])
+
+
+class AstBlock(AstNode):
+    def __init__(self, parent, nodes):
+        super(AstBlock, self).__init__(parent, astnode.Block)
+        self.children = nodes
+
+
+class AstName(AstNode):
+    def __init__(self, parent, name):
+        super(AstName, self).__init__(parent, astnode.Name)
+        self.children = [name]
+
+    name = property(lambda self: self.children[0])
+
+
+class AstTextString(AstNode):
+    def __init__(self, parent, string):
+        super(AstTextString, self).__init__(parent, astnode.TextString)
+        self.children = [string]
+
+    value = property(lambda self: self.children[0])
+
+
+class AstType(AstNode):
+    def __init__(self, parent, name, size=0, const=False):
+        super(AstType, self).__init__(parent, astnode.Type)
+        self.children = [name, size, const]
+
+    name = property(lambda self: self.children[0])
+    size = property(lambda self: self.children[1])
+    const = property(lambda self: self.children[2])
+
+    def compute_size(self, context):
+        if isinstance(self.size, list):
+            return context._clean_eval(self.size[0])
+        else:
+            return self.size
+
+class AstExpression(AstNode):
+    def __init__(self, parent, expr):
+        super(AstExpression, self).__init__(parent, astnode.Expression)
+        self.children = expr
+
+    expr = property(lambda self: self.children[0])

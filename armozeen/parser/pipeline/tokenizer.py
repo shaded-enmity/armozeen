@@ -12,7 +12,8 @@ class Tokenizer(PipelineStage):
         for c in string:
             if c in self.tokens:
                 if wordbuf:
-                    tokens.append(Token(wordbuf, (linec, (charc-len(wordbuf),charc))))
+                    tokens.append(
+                        Token(wordbuf, (linec, (charc - len(wordbuf), charc))))
                     wordbuf = ''
                 tokens.append(Token(c, (linec, charc)))
             else:
@@ -26,4 +27,3 @@ class Tokenizer(PipelineStage):
         if wordbuf:
             tokens.append(Token(wordbuf, (linec, charc)))
         return tokens
-

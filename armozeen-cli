@@ -13,12 +13,19 @@ from armozeen.parser.grammars import get_grammars_flat
 from armozeen.types import Tokens
 
 
+class LanguageStage(object):
+    (PreGrammars, ExpressionTree, AST, Interpret) = range(4)
+
+
 def argument_parser():
     ap = ArgumentParser(prog='armozeen')
     ap.add_argument('-s', '--set', help='Set an Armozeen parameter', action='append')
     ap.add_argument('-l', '--list', help='List Armozeen parameters')
     ap.add_argument('-v', '--verbose', action='store_true', help='Print verbose output')
     ap.add_argument('-o', '--optimize', help='Placeholder')
+    ap.add_argument('-e', '--expression-tree', help='Print intermediary expression tree and exit', action='store_true')
+    ap.add_argument('-a', '--ast', help='Print Abstract Syntax Tree and exit', action='store_true')
+    ap.add_argument('-p', '--pre-grammar', help='Print Abstract Syntax Tree and exit', action='store_true')
     ap.add_argument('--version', action='store_true', help='Print version information and exit')
     ap.add_argument('source_file', nargs='?')
     return ap
@@ -42,10 +49,27 @@ def get_input(f):
         return fl.read()
 
 
+def get_config_vars():
+    return [
+        ('bool', 'dump_full_arrays', 'Dumpvar will output the entire array'),
+        ('bool', 'defer_lhs_size',   'Defer output bits metavars from usage'),
+        ('int',  'verbose',          'Verbosity level')
+    ]
+
+
+stage = LanguageStage.Interpret
+
 args = argument_parser().parse_args()
 if args.version:
     print('0.5')
     exit(0)
+
+if args.expression_tree:
+    stage = LanguageStage.ExpressionTree
+elif args.ast:
+    stage = LanguageStage.AST
+elif args.pre_grammar:
+    stage = LanguageStage.PreGrammars
 
 conf_vars = {}
 for cfg in (args.set or []):
@@ -60,12 +84,20 @@ pipeline = []
 
 pipeline.append(get_tokenizer())
 pipeline.extend(get_lexemes())
-pipeline.extend(get_grammars_flat())
+
+if stage > LanguageStage.PreGrammars:
+    pipeline.extend(get_grammars_flat())
+
 pipeline.append(FindTuplesLateStage())
 
-pipeline.append(AstBuilder())
-pipeline.append(CleanupStage())
-pipeline.append(Run(**conf_vars))
+if stage >= LanguageStage.AST:
+    pipeline.append(AstBuilder())
+    pipeline.append(CleanupStage())
+
+if stage >= LanguageStage.Interpret:
+    pipeline.append(Run(**conf_vars))
 
 p = Pipeline(pipeline)
-p.run(get_input(args.source_file))
+result = p.run(get_input(args.source_file))
+if stage < LanguageStage.Interpret:
+    print(result)

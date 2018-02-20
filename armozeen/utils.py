@@ -87,7 +87,7 @@ def token_or_expr(x, values=None, expr_types=None):
 
 
 def find_expr_ctx(items, exprt, ctx=None, ctr=0):
-    ''' Find expression type `exprt` in `items` and optionally return 
+    ''' Find expression type `exprt` in `items` and optionally return
         more items than just the matching expression dependending on context `ctx` tuple:
 
           find_expr_ctx(items, Expressions.Add, ctx=(-1, 2))

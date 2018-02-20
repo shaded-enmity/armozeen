@@ -1,0 +1,9 @@
+bits(N*M) Repeat(bits(M) what, integer N)
+        bits(M*N) out;
+        for I=0 to N
+            out<((I + 1) * M) - 1 : I * M> = what;
+        return out;
+
+bits(32) repeated = Repeat('11001100', 4);
+
+dumpvar("repeated", "Repeat");

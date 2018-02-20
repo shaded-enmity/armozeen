@@ -1,4 +1,5 @@
 array bits(4) Data[0..4];
+//array integer Datum[0..4];
 
 Data[1] = '1010';
 

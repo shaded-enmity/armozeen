@@ -33,7 +33,7 @@ _ConsecutiveTabs = lexer.Consecutive(Tokens.Tab, 'tab_indented')
 _Keywords = lexer.Keywordizer(Keywords)
 _Names = lexer.Nameizer()
 _Bitselect = lexer.AngledExpressions()
-_Builtins = lexer.BuiltinTyper(BuiltinTypes)
+#_Builtins = lexer.BuiltinTyper(BuiltinTypes)
 
 _Unary = lexer.FindUnaryOperators()
 _Tuples = lexer.FindTuples()
@@ -48,9 +48,15 @@ _IndentationCollapser = lexer.IndentationCollapser()
 _ParenNewlineRemover = lexer.ParenNewlineRemover()
 _EarlyLoadResolver = lexer.NameLoads()
 
-
+'''
 Lexemes = [_DoubleQuotedString, _SingleQuotedString, _PairWiseCollapser, _CommentRemover, 
            _ConsecutiveWhitespace, _ConsecutiveTabs, _Keywords, _Builtins, _Names, _Parens, _Curlys,
+           _Brackets, _Bitselect, _Unary, _BitsType, _Types, _Tuples, _Assignments, _EarlyLoadResolver,
+           _FunctionDefs, _FunctionCalls, _InlineConditionals, _IndentationCollapser, _WhitespaceRemover,
+           _ParenNewlineRemover]
+'''
+Lexemes = [_DoubleQuotedString, _SingleQuotedString, _PairWiseCollapser, _CommentRemover, 
+           _ConsecutiveWhitespace, _ConsecutiveTabs, _Keywords, _Names, _Parens, _Curlys,
            _Brackets, _Bitselect, _Unary, _BitsType, _Types, _Tuples, _Assignments, _EarlyLoadResolver,
            _FunctionDefs, _FunctionCalls, _InlineConditionals, _IndentationCollapser, _WhitespaceRemover,
            _ParenNewlineRemover]

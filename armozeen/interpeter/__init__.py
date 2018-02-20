@@ -78,7 +78,7 @@ class AssignENH(ExpressionNodeHandler):
             if not lhs_item or check_expr(lhs_item[0], [Expressions.Name, Expressions.Load, Expressions.Funcall, Expressions.Paren, Expressions.Number, 'op_num_*']):
                 #lhs_name.children[0].char += '__Write'
                 return ast.AstFunctionCall(
-                        None, lhs_name, [lhs_item, rhs], is_bracket=True
+                        None, lhs_name, [lhs_item[0], rhs], is_bracket=True
                 )
             else:
                 raise Exception('AssignENH > Bracket func > {} |. {} <- {}'.format(lhs_name, lhs_item, rhs))
@@ -100,7 +100,7 @@ class FunctionCallENH(ExpressionNodeHandler):
 
     def handle(self, node):
         name, params = slicebinary(node.children)
-        return ast.AstFunctionCall(None, name, params)
+        return ast.AstFunctionCall(None, name, params.children)
 
 
 @register_ast_node
@@ -111,7 +111,7 @@ class FunctionDefENH(ExpressionNodeHandler):
 
     def handle(self, node):
         return_type, name, params, impl = node.children
-        return ast.AstFunctionDefinition(None, return_type[0], name[0], params, impl)
+        return ast.AstFunctionDefinition(None, return_type[0], name[0], [x[0] for x in params[0]], impl)
 
 
 @register_ast_node
@@ -119,6 +119,14 @@ class IfENH(ExpressionNodeHandler):
     @property
     def exptype(self):
         return Expressions.IfStatement
+
+    @staticmethod
+    def handle_branch(b):
+        if len(b.children) != 2:
+            raise Exception()
+        if len(b.children[0]) != 1:
+            raise Exception()
+        return ast.AstBranch(None, b.children[0][0], b.children[1])
 
     def handle(self, node):
         L = len(node.children)
@@ -137,7 +145,7 @@ class IfENH(ExpressionNodeHandler):
             if not check_expr(eib, 'elsifthen'):
                 raise Exception()
             eib_branches.append(
-                ast.AstBranch(None, *eib.children)
+                self.handle_branch(eib)
             )
 
         if else_branch and not check_expr(else_branch, ['elsifthen', 'elseblock']):
@@ -145,7 +153,7 @@ class IfENH(ExpressionNodeHandler):
         
         return ast.AstIf(
                 None, 
-                ast.AstBranch(None, *if_branch.children), 
+                self.handle_branch(if_branch),
                 eib_branches, 
                 ast.AstBranch(None, None, else_branch.children[0]) if else_branch else None
         )
@@ -224,6 +232,7 @@ class ForLoopENH(ExpressionNodeHandler):
         return 'forloop'
 
     def handle(self, node):
+        node.children[0] = node.children[0][0]
         return ast.AstForLoop(None, *node.children)
 
 
@@ -432,6 +441,87 @@ class BracketfuncENH(ExpressionNodeHandler):
     def handle(self, node):
         name, params = slicebinary(node.children)
         return ast.AstFunctionCall(None, name, params, is_bracket=True)
+
+
+@register_ast_node
+class NameENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'name'
+
+    def handle(self, node):
+        return ast.AstName(None, node.children[0])
+
+
+@register_ast_node
+class TextStringENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'sstring'
+
+    def handle(self, node):
+        return ast.AstTextString(None, node.children[0])
+
+
+@register_ast_node
+class BlockENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'block'
+
+    def handle(self, node):
+        return ast.AstBlock(None, node.children)
+
+
+@register_ast_node
+class TypedVariableENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'typed_variable'
+
+    def handle(self, node):
+        return ast.AstTypedName(None, *node.children)
+
+
+@register_ast_node
+class TypeENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'typeexp'
+
+    def handle(self, node):
+        return ast.AstType(None, *node.children)
+
+
+@register_ast_node
+class ExpressionENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'paren'
+
+    def handle(self, node):
+        return ast.AstExpression(None, node.children)
+
+
+@register_ast_node
+class RealENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'real'
+
+    def handle(self, node):
+        value = float(str(node.children[0].children[0]) + '.' + str(node.children[2].children[0]))
+        return ast.AstReal(None, value)
+
+
+@register_ast_node
+class SubstructureENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'substruct'
+
+    def handle(self, node):
+        return ast.AstSubstructure(None, node.children)
 
 
 class AstBuilder(PipelineStage):

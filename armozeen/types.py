@@ -39,10 +39,10 @@ class Keywords(object):
     All = ['if', 'then', 'else', 'case', 'of', 'when', 'for', 'to', 'constant', 
            'DIV', 'MOD', 'EOR', 'AND', 'OR', 'otherwise', 'assert', 'IN', 'while',
            'return', 'type', 'is', 'enumeration', 'elsif', 'array', 'downto',
-           'repeat', 'until']
+           'repeat', 'until', 'import', 'as']
     (If, Then, Else, Case, Of, When, For, To, Const, Div, Mod, Xor, And, 
      Or, Otherwise, Assert, In, While, Return, Type, Is, Enum, Elsif,
-     Array, DownTo, Repeat, Until) = All
+     Array, DownTo, Repeat, Until, Import, As) = All
 
 
 class Expressions(object):
@@ -97,6 +97,7 @@ class Expressions(object):
     Parameter = 'parameter'
     Load = 'load'
     TypedVariable = 'typed_variable'
+    SizeExpression = 'size_expression'
 
     IfStatement = 'if_statement'
     OpConcat = 'op_concat'
@@ -128,18 +129,30 @@ class Block(Expression):
 
 class Type(Expression):
     def __init__(self, name, size=0, const=False, parent=None):
-        self.name = name
-        self.size = size
-        self.const = const
         super(Type, self).__init__(parent, Expressions.TypeExp)
+        self.children = [name, size, const]
 
     def __repr__(self):
-        return '{}<{}, c={}>'.format(self.name, self.size, self.const)
+        return '{}<\n    {}\n, c={}>'.format(self.name, self.size, self.const)
+
+    name = property(lambda self: self.children[0])
+    size = property(lambda self: self.children[1])
+    const = property(lambda self: self.children[2])
 
 
+#class TypedVariable(Expression):
+#	def __init__(self, type_, name, is_reference=False):
+#		self.type = type_
+#		self.name = name
+#		self.is_reference = is_reference
+#		super(TypedVariable, self).__init__(None, 'typed_variable')
+
+        
 class TypedVariable(Expression):
     def __init__(self, type_, name, is_reference=False):
-        self.type = type_
-        self.name = name
-        self.is_reference = is_reference
         super(TypedVariable, self).__init__(None, 'typed_variable')
+        self.children = [type_, None, name, is_reference]
+
+    var_type = property(lambda self: self.children[0])
+    name = property(lambda self: self.children[2])
+    is_reference = property(lambda self: self.children[3])
