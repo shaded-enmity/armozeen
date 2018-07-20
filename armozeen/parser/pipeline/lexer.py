@@ -15,7 +15,7 @@ class TokenPairCollapser(PipelineStage):
 
     def run(self, tokens):
         e, l, r = Expression(None, Expressions.Root), 0, 0
-        
+
         for c in tokens:
             if isinstance(c, Expression):
                 if c.type == Expressions.Root:
@@ -519,7 +519,7 @@ class FindFunctionDefinitions(PipelineStage):
                 if check_token(prev, [Tokens.NewLine, Tokens.Nil]):
                     short = True
                     _, ind = find_ignore_whitespace(items[i+2:])
-                    fndef = check_token(ind, Tokens.NewLine)
+                    fndef = check_token(ind, Tokens.NewLine) and (i+2) < (len(items) - 1)
                 elif check_expr(prev, return_values):
                     _, prev_prev = reverse_find_ignore_whitespace(items[i-(k+1):])
                     fndef &= check_token(prev_prev, [Tokens.NewLine, Tokens.Nil])

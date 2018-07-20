@@ -1683,7 +1683,9 @@ class Run(PipelineStage):
                 )}
 
             def _load_code(modpath):
-                with open('examples/' + modpath + '.amz', 'r') as fp:
+                from os.path import join
+                base_path = self.config.get('path', self.config.get('cwd', './'))
+                with open(join(base_path, modpath + '.amz'), 'r') as fp:
                     return execute(LanguageStage.AST, fp.read())
 
             def _process_import(imp):

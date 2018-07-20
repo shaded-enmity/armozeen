@@ -5,6 +5,8 @@ from sys import stdin
 
 from armozeen.types import LanguageStage
 from armozeen.utils import execute
+from os import getcwd
+from os.path import dirname
 
 
 def argument_parser():
@@ -53,14 +55,13 @@ elif args.ast:
 elif args.pre_grammar:
     stage = LanguageStage.PreGrammars
 
-conf_vars = {}
+conf_vars = {'cwd': getcwd(), 'path': dirname(args.source_file)}
 for cfg in (args.set or []):
     if '=' in cfg:
         k, v = cfg.split('=', 2)
         conf_vars[k] = v
     else:
         conf_vars[cfg] = True
-
 
 result = execute(stage, get_input(args.source_file), **conf_vars)
 if stage < LanguageStage.Interpret:

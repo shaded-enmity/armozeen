@@ -1,4 +1,4 @@
-import metavars.Repeat
+import metavars.Repeat as haha
 
-v = Repeat('101', 4)
+v = haha('101', 4)
 dumpvar("v")
