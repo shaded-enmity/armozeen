@@ -3,18 +3,8 @@
 from argparse import ArgumentParser
 from sys import stdin
 
-from armozeen.parser.pipeline import Pipeline
-from armozeen.parser.pipeline.lexemes import Lexemes
-from armozeen.parser.pipeline.lexer import CleanupStage, FindTuplesLateStage
-from armozeen.parser.pipeline.tokenizer import Tokenizer
-from armozeen.interpeter.run import Run
-from armozeen.interpeter import AstBuilder
-from armozeen.parser.grammars import get_grammars_flat
-from armozeen.types import Tokens
-
-
-class LanguageStage(object):
-    (PreGrammars, ExpressionTree, AST, Interpret) = range(4)
+from armozeen.types import LanguageStage
+from armozeen.utils import execute
 
 
 def argument_parser():
@@ -31,20 +21,12 @@ def argument_parser():
     return ap
 
 
-def get_lexemes():
-    return Lexemes
-
-
-def get_tokenizer():
-    return Tokenizer(Tokens.All)
-
-
 def get_input(f):
     ''' Either read from file passed via stdin or via `f` '''
 
     if not f or f == '-':
         return stdin.read()
-    
+
     with open(f, 'r') as fl:
         return fl.read()
 
@@ -80,24 +62,6 @@ for cfg in (args.set or []):
         conf_vars[cfg] = True
 
 
-pipeline = []
-
-pipeline.append(get_tokenizer())
-pipeline.extend(get_lexemes())
-
-if stage > LanguageStage.PreGrammars:
-    pipeline.extend(get_grammars_flat())
-
-pipeline.append(FindTuplesLateStage())
-
-if stage >= LanguageStage.AST:
-    pipeline.append(AstBuilder())
-    pipeline.append(CleanupStage())
-
-if stage >= LanguageStage.Interpret:
-    pipeline.append(Run(**conf_vars))
-
-p = Pipeline(pipeline)
-result = p.run(get_input(args.source_file))
+result = execute(stage, get_input(args.source_file), **conf_vars)
 if stage < LanguageStage.Interpret:
     print(result)

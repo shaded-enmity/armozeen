@@ -1,0 +1,4 @@
+import metavars.Repeat
+
+v = Repeat('101', 4)
+dumpvar("v")

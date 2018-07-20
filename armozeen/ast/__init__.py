@@ -6,7 +6,8 @@ class astnode(object):
      Destructure, Branch, If, CaseOf, ForLoop, Load, Concat, Add, Sub, Mul, Div, Mod, Xor,
      BitshiftLeft, BitshiftRight, ArrayAccess, Compare, Number, And, Or, GreaterThan, LessThan,
      GraterThanOrEqual, LessThanOrEqual, Equal, NotEqual, In, Return, Tuple, TypeDefinition,
-     ArrayDefinition, Power, TypedName, Block, Name, TextString, Type, Expression, Real, Substructure) = (
+     ArrayDefinition, Power, TypedName, Block, Name, TextString, Type, Expression, Real, Substructure,
+     Alias, Import) = (
             'ast_assignment', 'ast_function_call', 'ast_function_definition',
             'ast_enumeration_definition', 'ast_string', 'ast_set', 'ast_bitselect',
             'ast_destructure', 'ast_branch', 'ast_if', 'ast_caseof', 'ast_forloop',
@@ -15,7 +16,8 @@ class astnode(object):
             'ast_compare', 'ast_number', 'ast_and', 'ast_or', 'ast_greater_than', 'ast_less_than',
             'ast_greater_than_or_equal', 'ast_less_than_or_equal', 'ast_equal', 'ast_not_equal', 'ast_in',
             'ast_return', 'ast_tuple', 'ast_type_definition', 'ast_array_definition', 'ast_power', 'ast_typed_name',
-            'ast_block', 'ast_name', 'ast_text_string', 'ast_type', 'ast_expression', 'ast_real', 'ast_substructure'
+            'ast_block', 'ast_name', 'ast_text_string', 'ast_type', 'ast_expression', 'ast_real', 'ast_substructure',
+            'ast_alias', 'ast_import'
     )
 
 
@@ -259,6 +261,24 @@ class AstType(AstNode):
             return context._clean_eval(self.size[0])
         else:
             return self.size
+
+
+class AstAlias(AstNode):
+    def __init__(self, parent, orig, new):
+        super(AstAlias, self).__init__(parent, astnode.Alias)
+        self.children = [orig, new]
+
+    original = property(lambda self: self.children[0])
+    new = property(lambda self: self.children[1])
+
+
+class AstImport(AstNode):
+    def __init__(self, parent, target):
+        super(AstImport, self).__init__(parent, astnode.Import)
+        self.children = [target]
+
+    target = property(lambda self: self.children[0])
+
 
 class AstExpression(AstNode):
     def __init__(self, parent, expr):

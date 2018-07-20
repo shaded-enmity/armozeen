@@ -1,0 +1,7 @@
+integer a = 5;
+integer b = 10;
+integer c;
+
+c = ((a * 2) * (b * a)) + a + b;
+
+dumpvar("c");

@@ -1,6 +1,10 @@
 from pprint import pformat
 
 
+class LanguageStage(object):
+    (PreGrammars, ExpressionTree, AST, Interpret) = range(4)
+
+
 class Token(object):
     def __init__(self, ch, position=None):
         self.char = ch
@@ -15,9 +19,9 @@ class ArmozeenException(Exception): pass
 
 class Tokens(object):
     All = '()+;={}[]-*/\\%&|.,\n\':"<>!? \t^\0'
-    (LeftParen, RightParen, Plus, Semicolon, Equals, 
+    (LeftParen, RightParen, Plus, Semicolon, Equals,
      LeftCurly, RightCurly, LeftSquare, RightSquare, Minus,
-     Star, Backslash, Slash, Percent, And, Or, Dot, Comma, 
+     Star, Backslash, Slash, Percent, And, Or, Dot, Comma,
      NewLine, Quote, Colon, DoubleQuote, LessThan, GreaterThan,
      Exclamation, Question, Space, Tab, Caret, Nil) = All
 
@@ -36,11 +40,11 @@ class Expression(object):
 
 
 class Keywords(object):
-    All = ['if', 'then', 'else', 'case', 'of', 'when', 'for', 'to', 'constant', 
+    All = ['if', 'then', 'else', 'case', 'of', 'when', 'for', 'to', 'constant',
            'DIV', 'MOD', 'EOR', 'AND', 'OR', 'otherwise', 'assert', 'IN', 'while',
            'return', 'type', 'is', 'enumeration', 'elsif', 'array', 'downto',
            'repeat', 'until', 'import', 'as']
-    (If, Then, Else, Case, Of, When, For, To, Const, Div, Mod, Xor, And, 
+    (If, Then, Else, Case, Of, When, For, To, Const, Div, Mod, Xor, And,
      Or, Otherwise, Assert, In, While, Return, Type, Is, Enum, Elsif,
      Array, DownTo, Repeat, Until, Import, As) = All
 
@@ -147,7 +151,6 @@ class Type(Expression):
 #		self.is_reference = is_reference
 #		super(TypedVariable, self).__init__(None, 'typed_variable')
 
-        
 class TypedVariable(Expression):
     def __init__(self, type_, name, is_reference=False):
         super(TypedVariable, self).__init__(None, 'typed_variable')

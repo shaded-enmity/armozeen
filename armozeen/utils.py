@@ -1,4 +1,4 @@
-from armozeen.types import Expression, Token, Expressions, Tokens
+from armozeen.types import Expression, Token, Expressions, Tokens, LanguageStage
 
 
 def replace(seq, item, with_):
@@ -114,7 +114,7 @@ def find_expr_ctx(items, exprt, ctx=None, ctr=0):
                 ilb, iub = i + lb, i + ub
                 low = ilb if ilb > 0 else 0
                 high = iub if iub < l else l-1
-                return (ctr + i, items[low:high])                 
+                return (ctr + i, items[low:high])
             return (ctr + i, t)
 
 
@@ -183,3 +183,34 @@ def nest(o, *addr):
     for a in addr:
         o = o.children[a]
     return o
+
+
+def execute(stage, code, **kwargs):
+    from armozeen.parser.pipeline import Pipeline
+    from armozeen.parser.pipeline.lexemes import Lexemes
+    from armozeen.parser.pipeline.lexer import CleanupStage, FindTuplesLateStage
+    from armozeen.parser.pipeline.tokenizer import Tokenizer
+    from armozeen.interpeter.run import Run
+    from armozeen.interpeter import AstBuilder
+    from armozeen.parser.grammars import get_grammars_flat
+
+    pipeline = []
+
+    pipeline.append(Tokenizer(Tokens.All))
+    pipeline.extend(Lexemes)
+
+    if stage > LanguageStage.PreGrammars:
+        pipeline.extend(get_grammars_flat())
+
+    pipeline.append(FindTuplesLateStage())
+
+    if stage >= LanguageStage.AST:
+        pipeline.append(AstBuilder())
+        pipeline.append(CleanupStage())
+
+    if stage >= LanguageStage.Interpret:
+        pipeline.append(Run(**kwargs))
+
+    p = Pipeline(pipeline)
+
+    return p.run(code)

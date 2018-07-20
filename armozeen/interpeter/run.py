@@ -1,7 +1,7 @@
 from armozeen.parser.pipeline import PipelineStage
 from armozeen.ast import astnode
-from armozeen.utils import check_ast, check_expr, swap, nest, check_token
-from armozeen.types import Expression, Expressions, Token, ArmozeenException
+from armozeen.utils import check_ast, check_expr, swap, nest, check_token, execute
+from armozeen.types import Expression, Expressions, Token, ArmozeenException, LanguageStage
 from re import compile as regexp
 
 
@@ -53,6 +53,10 @@ def match_types_strict(a, b, relax_const=False):
     return True
 
 
+def n2s(n):
+    return n.children[0].char
+
+
 def names_to_strings(names):
     ''' Unwrap [Name] -> [str]
 
@@ -61,7 +65,7 @@ def names_to_strings(names):
         so that we need to access it via `char`.
     '''
     for name in names:
-        yield name.children[0].char
+        yield n2s(name)
 
 
 def value_cmp(a, b):
@@ -145,7 +149,7 @@ def bitselect(node, state):
         Note that both of the specs can be mixed, so in reality we can have:
 
             some_value<63:60, 50:45, 41, 5:0>
-            
+
         This returns a list of tuples in the form of (upper, lower) or (index, index).
     '''
     candidates = []
@@ -172,10 +176,10 @@ def bitselect(node, state):
         if check_ast(prev, astnode.Number):
             v = state._clean_eval(prev)
             candidates.append((v, v))
-    
+
     for a, b in candidates:
         if not (a.type_info == ValueTypes.Integer and b.type_info == ValueTypes.Integer):
-            _raise(RET.BITSELECT_RANGE, 
+            _raise(RET.BITSELECT_RANGE,
                    'Invalid upper/lower bitselect: {}\n{}'.format(lower, upper))
 
     return candidates
@@ -321,18 +325,18 @@ def _dumpvar(args, context, sort=False):
                         fp = []
                         for p in nest(v, 2):
                             fp.append(fmt_def_param(p))
-                                               
+
                         val, params =  fp[0], ', '.join(fp[1:])
                         pt.add_row([nm, '{nm}[{params}] = {val}'.format(nm=nm, val=val, params=params), 'array funtion'])
                     else:
                         fp = []
                         for p in nest(v, 2):
                             fp.append(fmt_def_param(p))
-                        
+
                         val, params = fmt_def_param(v), ', '.join(fp)
                         pt.add_row([
-                            nm, 
-                            '{val} {nm}[{params}]'.format(nm=nm, val=val, params=params), 
+                            nm,
+                            '{val} {nm}[{params}]'.format(nm=nm, val=val, params=params),
                             'constant array funtion'
                         ])
             elif isinstance(v, (Value, Bitstring)):
@@ -350,8 +354,8 @@ def _dumpvar(args, context, sort=False):
                     else:
                         v = _dumptype(
                             ['  {} {}'.format(
-                                _format_typeinfo(context._eval(sv)), 
-                                nest(sv, 1, 0).char) 
+                                _format_typeinfo(context._eval(sv)),
+                                nest(sv, 1, 0).char)
                              for sv in v]
                         )
                 if ti.name == ValueTypes.Enum and ti.const:
@@ -403,7 +407,7 @@ class Resolvable(object):
     '''
     def __getitem__(self, item):
         return None
-    
+
     def keys(self):
         return []
 
@@ -419,7 +423,7 @@ class EvalResult(object):
     ''' Protocol for encapsulating results from eval operations, which need to:
         1) Provide a way of cloning the object
         2) Provide meaningful type information
-    
+
     '''
     def clone(self):
         return EvalResult()
@@ -711,7 +715,7 @@ class MetavarSolution(object):
                 return ((first, second), first:second)
 
             IdentityAndCombine('11', '00') == (('11', '00'), '1100')
-            
+
         This object validates that the return bitstring sizes in return value match the
         actually returned runtime value.
         If we changed the implementation such as:
@@ -787,8 +791,8 @@ class MetavarProblem(object):
 
 
 class StackFrame(object):
-    ''' Stack frame object 
-    
+    ''' Stack frame object
+
         `locals`           - Dictionary of local variables
         `returned`         - Value returned in the frame via `return`
         `backtrace_name`   - Name to show in backtrace
@@ -804,7 +808,7 @@ class StackFrame(object):
 
 
 class ProgramState(object):
-    ''' 
+    '''
 
     '''
     @property
@@ -945,12 +949,12 @@ class Run(PipelineStage):
         return last_scope
 
     def _eval(self, node):
-        ''' Evaluate `node` and mutate current `self.state` 
+        ''' Evaluate `node` and mutate current `self.state`
 
             Each branch here is self-contained unit handling a specific case, order of
             execution does not matter, and each case may opt-in to return some value.
 
-            Node may refer to sub-classes of `ast.AstNode` or 
+            Node may refer to sub-classes of `ast.AstNode` or
         '''
 
         self.state.frame.curnode = node
@@ -973,8 +977,8 @@ class Run(PipelineStage):
             names = []
             for i, f in enumerate(fields):
                 self.locals[nest(f, 0).char] = Value(
-                        TypeInfo(ValueTypes.Enum, const=True, sub=typename), 
-                        i
+                    TypeInfo(ValueTypes.Enum, const=True, sub=typename),
+                    i
                 )
                 names.append(nest(f, 0).char)
 
@@ -1652,6 +1656,55 @@ class Run(PipelineStage):
                 typ = self.locals[node.name].type_info
 
             return typ
+
+        elif check_ast(node, astnode.Alias):
+            _raise(RET.RUNTIME_ERROR, 'Alias node may not be directly evaluated')
+
+        elif check_ast(node, astnode.Import):
+            imp = node.target
+
+            def _resolve_import_path(node):
+                path = []
+                if check_ast(node, astnode.Load):
+                    left, right = node.children
+                    path.insert(0, right)
+                    while check_ast(left, astnode.Load):
+                        left, right = left.children
+                        path.insert(0, right)
+                    path.insert(0, left)
+                    return path
+                else:
+                    _raise(RET.RUNTIME_ERROR, 'Invalid import specification')
+
+            def _get_functions_from_module(mod):
+                return {n2s(fun.name): fun for fun in filter(
+                    lambda c: check_ast(c, astnode.FunctionDefinition),
+                    mod[0].children
+                )}
+
+            def _load_code(modpath):
+                with open('examples/' + modpath + '.amz', 'r') as fp:
+                    return execute(LanguageStage.AST, fp.read())
+
+            def _process_import(imp):
+                fullpath = _resolve_import_path(imp)
+                strings = [p.children[0].char for p in fullpath]
+                return strings[0], strings[1:-1], strings[-1]
+
+            if check_ast(imp, astnode.Alias):
+                modpath, _, original = _process_import(imp.children[0])
+                mod = _load_code(modpath)
+
+                fndefs = _get_functions_from_module(mod)
+                self.locals[n2s(imp.new)] = fndefs[original]
+            elif check_ast(imp, astnode.Load):
+                modpath, _, original = _process_import(imp)
+                mod = _load_code(modpath)
+
+                fndefs = _get_functions_from_module(mod)
+                self.locals[original] = fndefs[original]
+            else:
+                _raise(RET.RUNTIME_ERROR, 'Invalid import source specification')
 
         else:
             ''' Node unaccounted for

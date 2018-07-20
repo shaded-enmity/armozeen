@@ -1,0 +1,7 @@
+constant integer X = 4;
+constant integer Y = 2;
+
+bits((X * Y) * 4) somevar;
+output = ((X * Y) * 4);
+
+dumpvar("output", "somevar");

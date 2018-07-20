@@ -400,22 +400,27 @@ class ArrayGrammar(Grammar):
         tokens[-1].children = [items[1], items[2]]
 
 
+@register_grammar('stage3', 6)
 class AsGrammar(Grammar):
     @property
     def items(self):
         return [GExpr(['name', 'load', 'typename']), GExpr('as'), GExpr(['name', 'load', 'typename'])]
 
     def create_item(self, tokens, items, consumed):
-        pass
+        tokens.append(Expression(None, 'alias'))
+        tokens[-1].children = [items[0], items[2]]
 
 
+@register_grammar('stage3', 7)
 class ImportSimple(Grammar):
     @property
     def items(self):
         return [GExpr('import'), GConsume(0), NlTerm]
 
     def create_item(self, tokens, items, consumed):
-        pass
+        tokens.append(Expression(None, 'import'))
+        tokens[-1].children = consumed[0]
+
 
 class GenericGrammarProxy(object):
     ''' Proxy object to wrap already instantiated grammars '''

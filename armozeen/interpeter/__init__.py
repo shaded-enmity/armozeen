@@ -25,7 +25,7 @@ def sliceternary(items):
 
 _registered_ast_nodes = []
 def register_ast_node(C):
-    
+
     _registered_ast_nodes.append(C())
 
     def inner(*args, **kwargs):
@@ -522,6 +522,26 @@ class SubstructureENH(ExpressionNodeHandler):
 
     def handle(self, node):
         return ast.AstSubstructure(None, node.children)
+
+
+@register_ast_node
+class AliasENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'alias'
+
+    def handle(self, node):
+        return ast.AstAlias(None, *node.children)
+
+
+@register_ast_node
+class ImportENH(ExpressionNodeHandler):
+    @property
+    def exptype(self):
+        return 'import'
+
+    def handle(self, node):
+        return ast.AstImport(None, node.children[0])
 
 
 class AstBuilder(PipelineStage):
